@@ -460,10 +460,19 @@ const kaew: Build = (w, h) => {
   const rx = w / 2 - 1;
   const ry = h / 2 - 1;
 
-  steppedDiamond(g, cx, cy, Math.round(rx), Math.round(ry), 1, false, 1);
-  steppedDiamond(g, cx, cy, Math.round(rx * 0.72), Math.round(ry * 0.72), 2, false, 1);
-  steppedDiamond(g, cx, cy, Math.round(rx * 0.42), Math.round(ry * 0.42), 1, false, 1);
-  rosette(g, cx, cy, Math.max(2, Math.round(rx * 0.24)), 3, 1);
+  steppedDiamond(g, cx, cy, Math.round(rx), Math.round(ry), 1, false, 2);
+  steppedDiamond(g, cx, cy, Math.round(rx * 0.84), Math.round(ry * 0.84), 3, false, 1);
+  steppedDiamond(g, cx, cy, Math.round(rx * 0.66), Math.round(ry * 0.66), 2, false, 2);
+  steppedDiamond(g, cx, cy, Math.round(rx * 0.46), Math.round(ry * 0.46), 1, false, 1);
+  steppedDiamond(g, cx, cy, Math.round(rx * 0.3), Math.round(ry * 0.3), 2, false, 1);
+  rosette(g, cx, cy, Math.max(2, Math.round(rx * 0.2)), 3, 1);
+  // หนามแซมที่มุมซ้ายขวา ให้เต็มกรอบ
+  for (const dir of [-1, 1]) {
+    spike(g, cx + dir * rx * 0.92, cy, dir < 0 ? 180 : 0, rx * 0.16, Math.max(1, ry * 0.12), 3);
+    for (const sy of [-1, 1]) {
+      steppedDiamond(g, cx + dir * rx * 0.55, cy + sy * ry * 0.55, Math.max(1, Math.round(rx * 0.08)), Math.max(1, Math.round(ry * 0.08)), 3, true);
+    }
+  }
   for (const [ax, ay] of [[270, -1], [90, 1]] as const) {
     fan(g, cx, cy + ay * ry * 0.92, 3, ax - 26, ax + 26, ry * 0.3, 2);
   }

@@ -130,7 +130,7 @@ function drawPanel(
 ) {
   const inner = Math.max(8, width - 4);
   // คุมสัดส่วนลายไม่ให้ถูกยืดจนแบน
-  const motifW = Math.min(inner, Math.round(motifH * 0.78));
+  const motifW = Math.min(inner, Math.round(motifH * 0.62));
   const left = x0 + 2 + Math.round((inner - motifW) / 2);
   const margin = Math.round((inner - motifW) / 2);
 
@@ -150,8 +150,8 @@ function drawPanel(
   }
 
   // ลายประกอบริมแถบ
-  if (!filler || margin < 7) return;
-  const size = Math.min(margin - 2, Math.round(motifH / 5));
+  if (!filler || margin < 6) return;
+  const size = Math.min(margin - 1, Math.round(motifH / 4));
   if (size < 5) return;
   for (const side of [x0 + 2 + Math.round(margin / 2) - Math.round(size / 2), x0 + 2 + inner - Math.round(margin / 2) - Math.round(size / 2)]) {
     let k = 0;
@@ -290,26 +290,4 @@ export function composeMudmee(selected: Pattern[], options: ComposeOptions = {})
       names.length > 1 ? ` · แถบข้าง${names.slice(1).join(" · ")}` : ""
     } · ริ้วคั่น${MOTIFS[stripeMotif].name}`,
   };
-}
-
-// TEMP-LAB: ใช้เทียบลายระหว่างพัฒนา จะลบออกก่อนส่งงาน
-if (typeof window !== "undefined") {
-  const w = window as unknown as Record<string, unknown>;
-  w.__composeMudmee = composeMudmee;
-  // เรนเดอร์ลายเดี่ยวเป็นภาพ เพื่อดูรูปทรงตอนแก้
-  w.__motifPreview = (id: MotifId, mw: number, mh: number, scale = 6) => {
-    const grid = MOTIFS[id].build(mw, mh);
-    const canvas = document.createElement("canvas");
-    canvas.width = grid.w * scale;
-    canvas.height = grid.h * scale;
-    const ctx = canvas.getContext("2d")!;
-    const colors = ["#15213f", "#ffffff", "#7fa8d8", "#ffcc66"];
-    for (let y = 0; y < grid.h; y += 1)
-      for (let x = 0; x < grid.w; x += 1) {
-        ctx.fillStyle = colors[gget(grid, x, y)] ?? colors[0];
-        ctx.fillRect(x * scale, y * scale, scale, scale);
-      }
-    return canvas.toDataURL();
-  };
-  w.__motifIds = Object.keys(MOTIFS);
 }
