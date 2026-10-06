@@ -40,49 +40,6 @@ function shade(hex: string, factor: number) {
   return `#${ch.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
-/** หมุนเฉดสี ใช้หาสีพื้นของแถบกลางให้ต่างจากพื้นหลัก */
-function rotateHue(hex: string, deg: number) {
-  const n = parseInt(hex.slice(1), 16);
-  const r = ((n >> 16) & 255) / 255;
-  const g = ((n >> 8) & 255) / 255;
-  const b = (n & 255) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  const d = max - min;
-  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1) || 1);
-  let h = 0;
-  if (d !== 0) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-  }
-  h = (h * 60 + deg + 360) % 360;
-
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - c / 2;
-  const [r1, g1, b1] =
-    h < 60
-      ? [c, x, 0]
-      : h < 120
-        ? [x, c, 0]
-        : h < 180
-          ? [0, c, x]
-          : h < 240
-            ? [0, x, c]
-            : h < 300
-              ? [x, 0, c]
-              : [c, 0, x];
-  return `#${[r1, g1, b1]
-    .map((v) =>
-      Math.max(0, Math.min(255, Math.round((v + m) * 255)))
-        .toString(16)
-        .padStart(2, "0")
-    )
-    .join("")}`;
-}
-
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 const randInt = (min: number, max: number) => Math.floor(rand(min, max + 1));
 
@@ -91,14 +48,15 @@ const randInt = (min: number, max: number) => Math.floor(rand(min, max + 1));
  * 0 พื้นหลัก · 1 สีลาย · 2 สีรอง · 3 ไฮไลต์ · 4 พื้นแถบกลาง · 5 สีอุ่นของริ้ว
  */
 function buildPalette(selected: Pattern[]) {
-  const unique = Array.from(new Set(selected.flatMap((pattern) => pattern.colors))).sort(
-    (a, b) => luminance(a) - luminance(b)
-  );
+  const sortByLum = (list: string[]) =>
+    Array.from(new Set(list)).sort((a, b) => luminance(a) - luminance(b));
 
-  let ground = unique[0];
-  let bright = unique[unique.length - 1];
-  const mid = unique[Math.floor(unique.length * 0.55)] ?? bright;
-  const deep = unique[Math.floor(unique.length * 0.3)] ?? mid;
+  const all = sortByLum(selected.flatMap((pattern) => pattern.colors));
+
+  let ground = all[0];
+  let bright = all[all.length - 1];
+  const mid = all[Math.floor(all.length * 0.55)] ?? bright;
+  const deep = all[Math.floor(all.length * 0.3)] ?? mid;
   const highlight = luminance(deep) > luminance(ground) + 45 ? deep : bright;
 
   // ผ้าบางผืนสีใกล้กันหมด ถ้าปล่อยไว้ลายจะจมไปกับพื้น จึงถ่างคอนทราสต์ให้พอ
@@ -107,8 +65,25 @@ function buildPalette(selected: Pattern[]) {
     bright = shade(bright, 1.45);
   }
 
-  const panel = shade(rotateHue(ground, randInt(26, 50)), 1.3);
-  const warm = shade(rotateHue(bright, 150), 0.8);
+  // พื้นแถบกลางหยิบจากสีจริงของผ้าผืนที่สอง จะได้อยู่ในโทนเดียวกับผ้าต้นแบบ
+  const second = selected[1] ?? selected[0];
+  const secondSorted = sortByLum(second.colors);
+  let panel = secondSorted[Math.floor(secondSorted.length * 0.45)] ?? shade(ground, 1.6);
+  // ต้องต่างจากพื้นหลักพอ ไม่งั้นแถบจะกลืนกัน
+  if (Math.abs(luminance(panel) - luminance(ground)) < 38) panel = shade(panel, 1.65);
+  // และต้องไม่สว่างจนลายสีขาวจม
+  if (luminance(bright) - luminance(panel) < 60) panel = shade(panel, 0.62);
+
+  // สีอุ่นของริ้ว: หยิบสีที่อิ่มสุดในกองมาเร่งให้สด
+  const warmest = all.reduce((best, hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    const score = r - (g + b) / 2;
+    const bn = parseInt(best.slice(1), 16);
+    const [br, bg, bb] = [(bn >> 16) & 255, (bn >> 8) & 255, bn & 255];
+    return score > br - (bg + bb) / 2 ? hex : best;
+  }, all[0]);
+  const warm = shade(warmest, 1.25);
 
   return [ground, bright, mid, highlight, panel, warm];
 }
@@ -140,16 +115,25 @@ function drawWarpStripes(field: Grid, x0: number, width: number) {
   }
 }
 
-/** แถบลาย: วางลายซ้ำลงมาตลอดความสูง สลับสีทีละดอกแบบผ้าจริง */
+/**
+ * แถบลาย: วางลายหลักซ้ำลงมาตลอดความสูง สลับสีทีละดอกแบบผ้าจริง
+ * ถ้าลายแคบกว่าแถบ จะเติมลายประกอบไว้ริมสองข้างไม่ให้เหลือพื้นโล่ง
+ */
 function drawPanel(
   field: Grid,
   x0: number,
   width: number,
   motif: MotifId,
   motifH: number,
-  swapEvery: boolean
+  swapEvery: boolean,
+  filler?: MotifId
 ) {
-  const motifW = Math.max(8, width - 4);
+  const inner = Math.max(8, width - 4);
+  // คุมสัดส่วนลายไม่ให้ถูกยืดจนแบน
+  const motifW = Math.min(inner, Math.round(motifH * 0.78));
+  const left = x0 + 2 + Math.round((inner - motifW) / 2);
+  const margin = Math.round((inner - motifW) / 2);
+
   let index = 0;
   for (let y = -Math.round(motifH * 0.4); y < ROWS; y += motifH) {
     const grid = MOTIFS[motif].build(motifW, Math.max(10, motifH - 4));
@@ -160,9 +144,28 @@ function drawPanel(
         else if (v === 2) grid.cells[i] = 1;
       }
     }
-    stampGrid(field, grid, x0 + 2, y);
+    stampGrid(field, grid, left, y);
     steppedDiamond(field, x0 + width / 2, y - 2, 3, 2, 3, true);
     index += 1;
+  }
+
+  // ลายประกอบริมแถบ
+  if (!filler || margin < 7) return;
+  const size = Math.min(margin - 2, Math.round(motifH / 5));
+  if (size < 5) return;
+  for (const side of [x0 + 2 + Math.round(margin / 2) - Math.round(size / 2), x0 + 2 + inner - Math.round(margin / 2) - Math.round(size / 2)]) {
+    let k = 0;
+    for (let y = -size; y < ROWS; y += Math.round(size * 1.8)) {
+      const small = MOTIFS[filler].build(size, size);
+      if (k % 2 === 1) {
+        for (let i = 0; i < small.cells.length; i += 1) {
+          const v = small.cells[i];
+          if (v === 1) small.cells[i] = 3;
+        }
+      }
+      stampGrid(field, small, side, y);
+      k += 1;
+    }
   }
 }
 
@@ -255,7 +258,7 @@ export function composeMudmee(selected: Pattern[], options: ComposeOptions = {})
 
   const motifH = options.motifHeight ?? randInt(70, 88);
 
-  drawPanel(field, centerX0, centerW, main, motifH, true);
+  drawPanel(field, centerX0, centerW, main, motifH, true, outer);
 
   for (const dir of [-1, 1]) {
     const sideX0 = dir === -1 ? centerX0 - stripeW - sideW : centerX0 + centerW + stripeW;
