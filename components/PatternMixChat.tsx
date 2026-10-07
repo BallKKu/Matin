@@ -95,7 +95,14 @@ export default function PatternMixChat({ selected, onRemove, onClear }: Props) {
       });
       const data = await response.json().catch(() => ({}));
 
-      if (response.ok && data.drawing) {
+      if (response.ok && data.image) {
+        // ภาพจริงจาก Stability AI
+        finish({
+          text: `ลายผสมจาก ${attachments.map((item) => item.name).join(" + ")} (Stability AI)`,
+          image: data.image,
+          source: "gemini",
+        });
+      } else if (response.ok && data.drawing) {
         // Gemini วาดลายมาให้ แล้วเราจัดวางลงโครงผ้า เรนเดอร์ด้วยตัวเดียวกับโหมดในเครื่อง
         const mix = composeMudmee(attachments, data.drawing);
         finish({

@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { patterns } from "@/lib/silk-patterns";
 import { loadAccounts, runWithKeyPool } from "@/lib/geminiKeyPool";
 
@@ -103,6 +105,62 @@ function normaliseDrawing(raw: unknown): Drawing | null {
   return { title, motifs };
 }
 
+/**
+ * สร้างภาพจริงด้วย Stability AI (ถ้ามีคีย์)
+ *
+ * เป็นทางที่ให้คุณภาพใกล้เคียงภาพจาก GPT มากที่สุดที่ทำได้ตอนนี้
+ * เพราะ Gemini free tier ปิดการสร้างภาพไว้ทั้งหมด
+ * ใช้ภาพผ้าต้นแบบผืนแรกเป็นภาพตั้งต้นแบบ image-to-image ลายที่ได้จึงอิงของจริง
+ */
+async function generateWithStability(selected: typeof patterns, note: string) {
+  const apiKey = process.env.STABILITY_API_KEY;
+  if (!apiKey) return null;
+
+  const prompt = [
+    "Thai Isan mudmee ikat silk textile, flat-on photograph of the woven cloth",
+    `a new pattern blending the identities of: ${selected
+      .map((item) => `${item.name} from ${item.province}`)
+      .join(", ")}`,
+    selected[0].meaning.slice(0, 160),
+    "symmetrical repeating ikat motifs, visible silk threads and weave texture,",
+    "traditional colours of the source cloths, no text, no watermark, no border frame",
+    note.trim(),
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const form = new FormData();
+  form.append("prompt", prompt);
+  form.append("model", "sd3.5-flash");
+  form.append("output_format", "jpeg");
+  form.append("aspect_ratio", "1:1");
+  form.append("seed", String(Math.floor(Math.random() * 2 ** 31)));
+
+  try {
+    const file = path.join(process.cwd(), "public", "silk", `${selected[0].id}.jpg`);
+    const buffer = await readFile(file);
+    form.append("image", new Blob([new Uint8Array(buffer)], { type: "image/jpeg" }), "source.jpg");
+    form.append("mode", "image-to-image");
+    form.append("strength", "0.72");
+  } catch {
+    /* ไม่มีภาพตั้งต้นก็สร้างจาก prompt ล้วน */
+  }
+
+  const response = await fetch("https://api.stability.ai/v2beta/stable-image/generate/sd3", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "image/*" },
+    body: form,
+  });
+
+  if (!response.ok) {
+    console.error("Stability error:", response.status, (await response.text()).slice(0, 300));
+    return null;
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer()).toString("base64");
+  return `data:image/jpeg;base64,${bytes}`;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -116,6 +174,12 @@ export async function POST(request: Request) {
     const selected = patterns.filter((item) => ids.includes(item.id));
     if (selected.length === 0) {
       return Response.json({ error: "ไม่พบลายผ้าที่เลือก" }, { status: 400 });
+    }
+
+    // ทางที่ให้ภาพสวยที่สุดก่อน ถ้าตั้งคีย์ไว้
+    const stabilityImage = await generateWithStability(selected, note);
+    if (stabilityImage) {
+      return Response.json({ image: stabilityImage, source: "stability" });
     }
 
     const accounts = loadAccounts();

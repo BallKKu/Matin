@@ -100,6 +100,55 @@ function motifToRows(motif: MotifId, halfWidth: number, height: number): string[
   return rows;
 }
 
+/** ตัดแถวว่างหัวท้ายออก ดอกลายจะได้เรียงชิดกันตอนซ้ำ */
+function trimRows(rows: string[]): string[] {
+  let top = 0;
+  let bottom = rows.length - 1;
+  const blank = (row: string) => !/[123]/.test(row);
+  while (top < bottom && blank(rows[top])) top += 1;
+  while (bottom > top && blank(rows[bottom])) bottom -= 1;
+  return rows.slice(top, bottom + 1);
+}
+
+/**
+ * แทรกลายเล็กลงในช่องว่างของผัง
+ *
+ * ลายหลักเกาะแกนกลาง ทำให้เหลือช่องว่างข้าง ๆ โดยเฉพาะมุมบนของลายทรงพุ่ม
+ * ผ้าจริงจะมีลายประกอบเติมตรงนั้นเสมอ จึงไล่หาช่องที่ว่างจริงแล้ววางลงไป
+ */
+function fillGaps(rows: string[], filler: string[]): string[] {
+  const height = rows.length;
+  const width = rows[0]?.length ?? 0;
+  const fh = filler.length;
+  const fw = filler[0]?.length ?? 0;
+  if (!width || !fh || !fw || fh + 2 > height) return rows;
+
+  const out = rows.map((row) => [...row]);
+  const free = (top: number, left: number) => {
+    for (let r = -1; r <= fh; r += 1) {
+      const row = out[top + r];
+      if (!row) continue;
+      for (let c = -1; c <= fw; c += 1) {
+        const ch = row[left + c];
+        if (ch && ch !== ".") return false;
+      }
+    }
+    return true;
+  };
+
+  for (let top = 1; top + fh < height; top += fh + 2) {
+    for (let left = 1; left + fw < width; left += fw + 2) {
+      if (!free(top, left)) continue;
+      for (let r = 0; r < fh; r += 1)
+        for (let c = 0; c < fw; c += 1) {
+          const ch = filler[r][c];
+          if (ch !== ".") out[top + r][left + c] = ch;
+        }
+    }
+  }
+  return out.map((row) => row.join(""));
+}
+
 /**
  * สร้างผังจากลายของผ้าที่เลือก โดยสุ่มโครงใหม่ทุกครั้ง
  * จำนวนแถบ ความกว้าง ระยะดอก และการมีเชิงผ้า ไม่ตายตัว
@@ -114,7 +163,7 @@ export function buildLocalDesign(selected: Pattern[]): ChartDesign {
   const accent: MotifId = pool[1] ?? side;
   const bandMotif: MotifId = specs[0]?.band ?? "khit";
 
-  const size = pick([96, 128, 128, 160]);
+  const size = pick([128, 160, 160]);
   const half = size / 2;
 
   const motifs: Record<string, string[]> = {};
@@ -122,44 +171,71 @@ export function buildLocalDesign(selected: Pattern[]): ChartDesign {
   let used = 0;
 
   const addWarp = (width: number) => {
-    const sequences = [
-      [1, 5, 0, 0],
-      [1, 0, 5, 0, 1, 0, 0],
-      [5, 1, 0, 2, 0],
-      [1, 0, 0, 2, 0, 0],
-    ];
-    bands.push({ kind: "warp", width, sequence: pick(sequences) });
+    bands.push({
+      kind: "warp",
+      width,
+      sequence: pick([
+        [1, 5, 0, 0],
+        [1, 0, 5, 0, 1, 0, 0],
+        [5, 1, 0, 2, 0],
+        [1, 0, 0, 2, 0, 0],
+      ]),
+    });
     used += width;
   };
 
-  const addMotif = (key: string, motif: MotifId, width: number, step: number, ground: number) => {
-    motifs[key] = motifToRows(motif, width, Math.max(6, step - randInt(2, 5)));
-    bands.push({ kind: "motif", width, ground, motif: key, step, alternate: Math.random() < 0.7 });
+  /**
+   * แถบลาย: ความสูงของดอกผูกกับความกว้างแถบ ลายจึงไม่ถูกยืดจนแบนหรือผอม
+   * และ step ตั้งให้ดอกเกือบชนกัน ผืนผ้าจะได้แน่นแบบผ้าจริง
+   */
+  const addMotif = (
+    key: string,
+    motif: MotifId,
+    width: number,
+    ground: number,
+    ratio: number,
+    filler?: MotifId
+  ) => {
+    const height = Math.max(8, Math.round(width * ratio));
+    let rows = trimRows(motifToRows(motif, width, height));
+    if (filler) {
+      const size = Math.max(4, Math.round(width * 0.3));
+      rows = fillGaps(rows, trimRows(motifToRows(filler, size, Math.round(size * 1.3))));
+    }
+    motifs[key] = rows;
+    bands.push({
+      kind: "motif",
+      width,
+      ground,
+      motif: key,
+      step: rows.length + randInt(1, 3),
+      alternate: Math.random() < 0.75,
+    });
     used += width;
   };
 
   // ริมผ้า
-  addWarp(randInt(4, 9));
+  addWarp(randInt(3, 6));
 
-  // แถบรอง: สุ่มว่าจะมีกี่ชั้นก่อนถึงแถบกลาง
-  const layers = randInt(1, 2);
+  // แถบรองหลายชั้น ไล่กว้างขึ้นเข้าหากลาง ผืนผ้าจะได้มีจังหวะ
+  const centreW = randInt(Math.round(half * 0.42), Math.round(half * 0.56));
+  const layers = randInt(2, 3);
   for (let i = 0; i < layers; i += 1) {
-    const width = randInt(10, 18);
-    if (used + width > half - 18) break;
-    addMotif(`side${i}`, i === 0 ? side : accent, width, randInt(18, 30), 0);
-    const stripe = randInt(3, 6);
-    if (used + stripe < half - 16) addWarp(stripe);
+    const remaining = half - used - centreW;
+    if (remaining < 10) break;
+    const width = Math.min(remaining - 4, randInt(8, 16));
+    if (width < 6) break;
+    addMotif(`side${i}`, i % 2 === 0 ? side : accent, width, 0, randInt(12, 16) / 10, bandMotif);
+    if (half - used - centreW > 6) addWarp(randInt(2, 5));
   }
 
-  // แถบคั่นลายเล็ก
-  const bandW = randInt(5, 9);
-  if (used + bandW < half - 14) {
-    addMotif("band", bandMotif, bandW, randInt(8, 13), 0);
+  // แถบคั่นลายเล็กติดแถบกลาง
+  if (half - used - centreW >= 6) {
+    addMotif("band", bandMotif, half - used - centreW, 0, randInt(9, 12) / 10);
   }
 
-  // แถบกลาง กินความกว้างที่เหลือทั้งหมด
-  const centreW = Math.max(12, half - used);
-  addMotif("centre", main, centreW, randInt(30, 46), 4);
+  // แถบกลาง กินที่เหลือทั้งหมด
+  addMotif("centre", main, Math.max(14, half - used), 4, randInt(11, 14) / 10, accent);
 
   const design: ChartDesign = {
     title: `ลาย${MOTIFS[main].name}ผสม${MOTIFS[side].name}`,
@@ -168,10 +244,10 @@ export function buildLocalDesign(selected: Pattern[]): ChartDesign {
     motifs,
   };
 
-  // เชิงผ้ามีบ้างไม่มีบ้าง
-  if (Math.random() < 0.6) {
-    const height = randInt(10, Math.round(size / 6));
-    motifs.border = motifToRows(pick([bandMotif, accent, "khit" as MotifId]), randInt(5, 9), height);
+  if (Math.random() < 0.65) {
+    const width = randInt(6, 10);
+    const height = randInt(10, Math.round(size / 8));
+    motifs.border = motifToRows(pick([bandMotif, accent]), width, height);
     design.border = { height, motif: "border", ground: 4 };
   }
 
