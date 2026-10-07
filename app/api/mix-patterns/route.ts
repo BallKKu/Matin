@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import { patterns } from "@/lib/silk-patterns";
 import { loadAccounts, runWithKeyPool } from "@/lib/geminiKeyPool";
 
@@ -114,51 +114,80 @@ function normaliseDrawing(raw: unknown): Drawing | null {
  */
 async function generateWithStability(selected: typeof patterns, note: string) {
   const apiKey = process.env.STABILITY_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) return { image: null, error: null };
 
-  const prompt = [
-    "Thai Isan mudmee ikat silk textile, flat-on photograph of the woven cloth",
-    `a new pattern blending the identities of: ${selected
-      .map((item) => `${item.name} from ${item.province}`)
-      .join(", ")}`,
-    selected[0].meaning.slice(0, 160),
+  const detailed = [
+    "Thai Isan mudmee ikat silk textile, flat-on view of the woven cloth",
+    `a new pattern blending: ${selected.map((item) => item.name).join(", ")}`,
+    selected[0].meaning.slice(0, 140),
     "symmetrical repeating ikat motifs, visible silk threads and weave texture,",
-    "traditional colours of the source cloths, no text, no watermark, no border frame",
+    "traditional colours of the source cloths, no text, no watermark",
     note.trim(),
   ]
     .filter(Boolean)
     .join(", ");
 
-  const form = new FormData();
-  form.append("prompt", prompt);
-  form.append("model", "sd3.5-flash");
-  form.append("output_format", "jpeg");
-  form.append("aspect_ratio", "1:1");
-  form.append("seed", String(Math.floor(Math.random() * 2 ** 31)));
+  // สำรองไว้เผื่อระบบกรองเนื้อหาตีตกข้อความไทย ซึ่งเกิดขึ้นเป็นครั้งคราว
+  const plain =
+    "handwoven Thai ikat silk fabric, symmetrical geometric motifs, flat lay, visible weave texture";
 
+  // ครอบภาพผ้าต้นแบบเป็นจัตุรัสก่อนส่ง ผลลัพธ์จะได้เป็นจัตุรัสตามไปด้วย
+  let square: Buffer | null = null;
   try {
     const file = path.join(process.cwd(), "public", "silk", `${selected[0].id}.jpg`);
-    const buffer = await readFile(file);
-    form.append("image", new Blob([new Uint8Array(buffer)], { type: "image/jpeg" }), "source.jpg");
-    form.append("mode", "image-to-image");
-    form.append("strength", "0.72");
-  } catch {
-    /* ไม่มีภาพตั้งต้นก็สร้างจาก prompt ล้วน */
+    square = await sharp(file)
+      .resize(1024, 1024, { fit: "cover", position: "centre" })
+      .jpeg({ quality: 92 })
+      .toBuffer();
+  } catch (error) {
+    console.error("เตรียมภาพตั้งต้นไม่สำเร็จ:", error);
   }
 
-  const response = await fetch("https://api.stability.ai/v2beta/stable-image/generate/sd3", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, Accept: "image/*" },
-    body: form,
-  });
+  const send = async (prompt: string) => {
+    const form = new FormData();
+    form.append("prompt", prompt);
+    form.append("model", "sd3.5-flash");
+    form.append("output_format", "jpeg");
+    form.append("seed", String(Math.floor(Math.random() * 2 ** 31)));
+
+    if (square) {
+      // image-to-image ให้ลายที่อิงผ้าจริง ส่วน text-to-image มักได้ภาพผ้าทั้งผืนแขวนอยู่
+      form.append("image", new Blob([new Uint8Array(square)], { type: "image/jpeg" }), "source.jpg");
+      form.append("mode", "image-to-image");
+      form.append("strength", "0.75");
+    } else {
+      // aspect_ratio ใช้ได้เฉพาะโหมด text-to-image เท่านั้น
+      form.append("aspect_ratio", "1:1");
+    }
+
+    return fetch("https://api.stability.ai/v2beta/stable-image/generate/sd3", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "image/*" },
+      body: form,
+    });
+  };
+
+  let response = await send(detailed);
+  if (response.status === 403) {
+    console.warn("Stability ตีตกคำสั่งแรก ลองใหม่ด้วยคำสั่งภาษาอังกฤษล้วน");
+    response = await send(plain);
+  }
 
   if (!response.ok) {
-    console.error("Stability error:", response.status, (await response.text()).slice(0, 300));
-    return null;
+    const detail = (await response.text()).slice(0, 300);
+    console.error("Stability error:", response.status, detail);
+    // ส่งเหตุผลกลับไปด้วย จะได้ไม่เงียบหายเวลาใช้ไม่ได้
+    return {
+      image: null,
+      error:
+        response.status === 402 || /credit/i.test(detail)
+          ? "เครดิต Stability หมด"
+          : `Stability ตอบ ${response.status}`,
+    };
   }
 
   const bytes = Buffer.from(await response.arrayBuffer()).toString("base64");
-  return `data:image/jpeg;base64,${bytes}`;
+  return { image: `data:image/jpeg;base64,${bytes}`, error: null };
 }
 
 export async function POST(request: Request) {
@@ -177,9 +206,9 @@ export async function POST(request: Request) {
     }
 
     // ทางที่ให้ภาพสวยที่สุดก่อน ถ้าตั้งคีย์ไว้
-    const stabilityImage = await generateWithStability(selected, note);
-    if (stabilityImage) {
-      return Response.json({ image: stabilityImage, source: "stability" });
+    const stability = await generateWithStability(selected, note);
+    if (stability.image) {
+      return Response.json({ image: stability.image, source: "stability" });
     }
 
     const accounts = loadAccounts();
@@ -276,7 +305,7 @@ export async function POST(request: Request) {
       return Response.json(
         {
           code: "all_keys_failed",
-          error: "Gemini ออกแบบผังไม่สำเร็จ",
+          error: stability.error ?? "Gemini ออกแบบผังไม่สำเร็จ",
           details: result.body.slice(0, 500),
         },
         { status: result.status === 429 ? 429 : 502 }
