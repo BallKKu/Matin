@@ -71,6 +71,22 @@ export default function PatternMixChat({ selected, onRemove, onClear }: Props) {
         )
       );
 
+    // ร่างผังในเครื่องให้เห็นทันที ไม่ต้องรอ Gemini
+    let drafted = false;
+    try {
+      const draft = composeMudmee(attachments);
+      finish({
+        text: `ร่างผังในเครื่อง — ${draft.recipe}
+กำลังให้ Gemini ออกแบบผังให้ใหม่...`,
+        image: draft.dataUrl,
+        source: "demo",
+        pending: true,
+      });
+      drafted = true;
+    } catch {
+      /* เบราว์เซอร์ไม่รองรับ canvas — ปล่อยให้รอผลจาก Gemini อย่างเดียว */
+    }
+
     try {
       const response = await fetch("/api/mix-patterns", {
         method: "POST",
@@ -79,33 +95,24 @@ export default function PatternMixChat({ selected, onRemove, onClear }: Props) {
       });
       const data = await response.json().catch(() => ({}));
 
-      if (response.ok && data.image) {
+      if (response.ok && data.drawing) {
+        // Gemini วาดลายมาให้ แล้วเราจัดวางลงโครงผ้า เรนเดอร์ด้วยตัวเดียวกับโหมดในเครื่อง
+        const mix = composeMudmee(attachments, data.drawing);
         finish({
-          text: `ลายผสมจาก ${attachments.map((item) => item.name).join(" + ")}`,
-          image: data.image,
+          text: `${mix.recipe} · ลายวาดโดย ${data.model}`,
+          image: mix.dataUrl,
           source: "gemini",
         });
-      } else if (data.code === "missing_api_key" || data.code === "all_keys_failed") {
-        const mix = composeMudmee(attachments);
+      } else if (drafted) {
         finish({
-          text: `${
-            data.code === "missing_api_key"
-              ? "ยังไม่ได้ตั้งค่าคีย์ Gemini"
-              : "คีย์ Gemini เต็มโควตารายวันทุกบัญชีแล้ว"
-          } — ใช้โหมดเดโมประกอบลายในเบราว์เซอร์: ${mix.recipe}`,
-          image: mix.dataUrl,
-          source: "demo",
+          text: `Gemini ไม่ว่าง ใช้ผังที่ประกอบในเครื่องแทน (ลองกดเจนอีกครั้งได้)`,
         });
       } else {
-        finish({ text: data.error ?? "สร้างภาพไม่สำเร็จ", error: true });
+        finish({ text: data.error ?? "สร้างผังไม่สำเร็จ", error: true });
       }
     } catch {
-      try {
-        const mix = composeMudmee(attachments);
-        finish({ text: `โหมดเดโม — ${mix.recipe}`, image: mix.dataUrl, source: "demo" });
-      } catch {
-        finish({ text: "เชื่อมต่อไม่สำเร็จ ลองใหม่อีกครั้ง", error: true });
-      }
+      if (!drafted) finish({ text: "เชื่อมต่อไม่สำเร็จ ลองใหม่อีกครั้ง", error: true });
+      else finish({ text: "ใช้ผังที่ประกอบในเครื่อง (เชื่อมต่อ Gemini ไม่ได้)" });
     } finally {
       setBusy(false);
       onClear();
@@ -165,7 +172,7 @@ export default function PatternMixChat({ selected, onRemove, onClear }: Props) {
                       ))}
                     </div>
                   )}
-                  <p className={message.pending ? "animate-pulse" : undefined}>{message.text}</p>
+                  <p className={`whitespace-pre-line ${message.pending ? "animate-pulse" : ""}`}>{message.text}</p>
                   {message.image && (
                     <div className="mt-3">
                       <img

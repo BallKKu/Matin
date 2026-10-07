@@ -1,37 +1,26 @@
+import { MOTIFS, gget, type MotifId } from "@/lib/mudmeeMotifs";
 import {
-  GROUND_VALUES,
-  MOTIFS,
-  buildBorder,
-  createGrid,
-  gget,
-  gset,
-  stampGrid,
-  steppedDiamond,
-  type Grid,
-  type MotifId,
-} from "@/lib/mudmeeMotifs";
+  designToGrid,
+  normaliseDesign,
+  renderChart,
+  type Band,
+  type ChartDesign,
+} from "@/lib/mudmeeChart";
 import { patternMotifs, type Pattern } from "@/lib/silk-patterns";
 
 /**
- * ประกอบผ้าผืนใหม่จากลายหลักของผ้าที่เลือก
+ * ประกอบผังทอผ้ามัดหมี่จากลายของผ้าที่เลือก
  *
- * โครงเป็นริ้วแนวตั้งแบบผ้าซิ่นอีสาน สมมาตรรอบแกนกลาง:
- *   ริมผ้า | ริ้วคั่น | แถบข้าง | ริ้วคั่น | แถบกลาง | ริ้วคั่น | แถบข้าง | ริ้วคั่น | ริมผ้า
- * แถบกลางใช้พื้นคนละสีและวางลายหลักของผืนแรก
- * แถบข้างวางลายของผืนที่เหลือ ริ้วคั่นเป็นลายเล็กขนาบเส้นยืนสีอุ่น
- * ปิดท้ายด้วยเชิงผ้าด้านล่าง
+ * ผังที่ได้จะถูกเรนเดอร์ด้วย renderChart ตัวเดียวกับผังที่ Gemini ออกแบบ
+ * กริดของทุกภาพจึงเป็นระบบเดียวกัน ช่องเท่ากันทั้งผืน
  */
-
-const CELL = 3; // ขนาดเส้นไหมหนึ่งเส้นเมื่อเรนเดอร์ (px)
-const COLS = 256; // จำนวนเส้นยืน
-const ROWS = 256; // จำนวนเส้นพุ่ง
 
 const luminance = (hex: string) => {
   const n = parseInt(hex.slice(1), 16);
   return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
 };
 
-/** ปรับความสว่างของสี ใช้ถอยพื้นให้เข้มขึ้นหรือดึงสีลายให้สว่างขึ้น */
+/** ปรับความสว่างของสี */
 function shade(hex: string, factor: number) {
   const n = parseInt(hex.slice(1), 16);
   const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) =>
@@ -42,12 +31,13 @@ function shade(hex: string, factor: number) {
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 const randInt = (min: number, max: number) => Math.floor(rand(min, max + 1));
+const pick = <T,>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
 
 /**
  * จานสี 6 ช่อง
  * 0 พื้นหลัก · 1 สีลาย · 2 สีรอง · 3 ไฮไลต์ · 4 พื้นแถบกลาง · 5 สีอุ่นของริ้ว
  */
-function buildPalette(selected: Pattern[]) {
+export function buildPalette(selected: Pattern[]) {
   const sortByLum = (list: string[]) =>
     Array.from(new Set(list)).sort((a, b) => luminance(a) - luminance(b));
 
@@ -65,229 +55,239 @@ function buildPalette(selected: Pattern[]) {
     bright = shade(bright, 1.45);
   }
 
-  // พื้นแถบกลางหยิบจากสีจริงของผ้าผืนที่สอง จะได้อยู่ในโทนเดียวกับผ้าต้นแบบ
-  const second = selected[1] ?? selected[0];
-  const secondSorted = sortByLum(second.colors);
-  let panel = secondSorted[Math.floor(secondSorted.length * 0.45)] ?? shade(ground, 1.6);
-  // ต้องต่างจากพื้นหลักพอ ไม่งั้นแถบจะกลืนกัน
-  if (Math.abs(luminance(panel) - luminance(ground)) < 38) panel = shade(panel, 1.65);
-  // และต้องไม่สว่างจนลายสีขาวจม
-  if (luminance(bright) - luminance(panel) < 60) panel = shade(panel, 0.62);
+  // พื้นแถบกลาง: เลือก "สีจริง" ที่ต่างจากพื้นหลักมากที่สุด
+  // (เลี่ยงการเร่งความสว่างเอง เพราะทำให้สีซีดจนกลายเป็นเทา)
+  const rgb = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const distance = (a: string, b: string) => {
+    const [r1, g1, b1] = rgb(a);
+    const [r2, g2, b2] = rgb(b);
+    return Math.hypot(r1 - r2, g1 - g2, b1 - b2);
+  };
+  const panelPool = Array.from(
+    new Set([...(selected[1] ?? selected[0]).colors, ...all])
+  ).filter((hex) => luminance(bright) - luminance(hex) > 55);
+  let panel = panelPool.length
+    ? panelPool.reduce((best, hex) => (distance(hex, ground) > distance(best, ground) ? hex : best))
+    : shade(ground, 1.5);
+  // ถ้ายังใกล้พื้นหลักเกินไป ค่อยขยับความสว่างเล็กน้อย
+  if (distance(panel, ground) < 55) panel = shade(panel, luminance(ground) < 90 ? 1.45 : 0.68);
 
-  // สีอุ่นของริ้ว: หยิบสีที่อิ่มสุดในกองมาเร่งให้สด
   const warmest = all.reduce((best, hex) => {
     const n = parseInt(hex.slice(1), 16);
-    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-    const score = r - (g + b) / 2;
+    const score = ((n >> 16) & 255) - (((n >> 8) & 255) + (n & 255)) / 2;
     const bn = parseInt(best.slice(1), 16);
-    const [br, bg, bb] = [(bn >> 16) & 255, (bn >> 8) & 255, bn & 255];
-    return score > br - (bg + bb) / 2 ? hex : best;
+    return score > ((bn >> 16) & 255) - ((((bn >> 8) & 255) + (bn & 255)) / 2) ? hex : best;
   }, all[0]);
-  const warm = shade(warmest, 1.25);
 
-  return [ground, bright, mid, highlight, panel, warm];
+  return [ground, bright, mid, highlight, panel, shade(warmest, 1.25)];
 }
 
-/* ---------- ส่วนประกอบของผืนผ้า ---------- */
-
-/** ริ้วคั่นแนวตั้ง: เส้นยืนสีอุ่นขนาบลายเล็กที่ซ้ำตลอดความสูง */
-function drawStripe(field: Grid, x0: number, width: number, motif: MotifId | null) {
-  for (let y = 0; y < ROWS; y += 1) {
-    gset(field, x0, y, 5);
-    gset(field, x0 + 1, y, 1);
-    gset(field, x0 + width - 1, y, 5);
-    gset(field, x0 + width - 2, y, 1);
+/** แปลงลายจากคลังเป็นผังอักขระครึ่งซ้าย เพื่อให้ใช้ร่วมกับผังของ Gemini ได้ */
+function motifToRows(motif: MotifId, halfWidth: number, height: number): string[] {
+  const grid = MOTIFS[motif].build(halfWidth * 2, height);
+  const rows: string[] = [];
+  for (let y = 0; y < height; y += 1) {
+    let row = "";
+    for (let x = 0; x < halfWidth; x += 1) {
+      const v = gget(grid, x, y);
+      row += v >= 1 && v <= 3 ? String(v) : ".";
+    }
+    rows.push(row);
   }
-  if (!motif || width < 8) return;
-
-  const inner = width - 4;
-  const tile = MOTIFS[motif].build(inner, inner);
-  for (let y = -inner; y < ROWS; y += inner + 1) stampGrid(field, tile, x0 + 2, y);
-}
-
-/** ริมผ้า: ริ้วเส้นยืนสลับสี เลียนแบบเส้นยืนย้อมแยกสีอย่างซิ่นทิว */
-function drawWarpStripes(field: Grid, x0: number, width: number) {
-  const sequence = [1, 5, 0, 1, 0, 5, 1, 0, 0, 2, 0, 0];
-  for (let i = 0; i < width; i += 1) {
-    const v = sequence[i % sequence.length];
-    if (!v) continue;
-    for (let y = 0; y < ROWS; y += 1) gset(field, x0 + i, y, v);
-  }
+  return rows;
 }
 
 /**
- * แถบลาย: วางลายหลักซ้ำลงมาตลอดความสูง สลับสีทีละดอกแบบผ้าจริง
- * ถ้าลายแคบกว่าแถบ จะเติมลายประกอบไว้ริมสองข้างไม่ให้เหลือพื้นโล่ง
+ * สร้างผังจากลายของผ้าที่เลือก โดยสุ่มโครงใหม่ทุกครั้ง
+ * จำนวนแถบ ความกว้าง ระยะดอก และการมีเชิงผ้า ไม่ตายตัว
  */
-function drawPanel(
-  field: Grid,
-  x0: number,
-  width: number,
-  motif: MotifId,
-  motifH: number,
-  swapEvery: boolean,
-  filler?: MotifId
-) {
-  const inner = Math.max(8, width - 4);
-  // คุมสัดส่วนลายไม่ให้ถูกยืดจนแบน
-  const motifW = Math.min(inner, Math.round(motifH * 0.62));
-  const left = x0 + 2 + Math.round((inner - motifW) / 2);
-  const margin = Math.round((inner - motifW) / 2);
+export function buildLocalDesign(selected: Pattern[]): ChartDesign {
+  const specs = selected.map((pattern) => patternMotifs[pattern.id]).filter(Boolean);
+  const main: MotifId = specs[0]?.main ?? "kaew";
+  const pool = Array.from(
+    new Set([...specs.slice(1).map((s) => s.main), ...specs.map((s) => s.filler)])
+  ).filter((m) => m !== main);
+  const side: MotifId = pool[0] ?? specs[0]?.filler ?? "kho";
+  const accent: MotifId = pool[1] ?? side;
+  const bandMotif: MotifId = specs[0]?.band ?? "khit";
 
-  let index = 0;
-  for (let y = -Math.round(motifH * 0.4); y < ROWS; y += motifH) {
-    const grid = MOTIFS[motif].build(motifW, Math.max(10, motifH - 4));
-    if (swapEvery && index % 2 === 1) {
-      for (let i = 0; i < grid.cells.length; i += 1) {
-        const v = grid.cells[i];
-        if (v === 1) grid.cells[i] = 2;
-        else if (v === 2) grid.cells[i] = 1;
-      }
-    }
-    stampGrid(field, grid, left, y);
-    steppedDiamond(field, x0 + width / 2, y - 2, 3, 2, 3, true);
-    index += 1;
+  const size = pick([96, 128, 128, 160]);
+  const half = size / 2;
+
+  const motifs: Record<string, string[]> = {};
+  const bands: Band[] = [];
+  let used = 0;
+
+  const addWarp = (width: number) => {
+    const sequences = [
+      [1, 5, 0, 0],
+      [1, 0, 5, 0, 1, 0, 0],
+      [5, 1, 0, 2, 0],
+      [1, 0, 0, 2, 0, 0],
+    ];
+    bands.push({ kind: "warp", width, sequence: pick(sequences) });
+    used += width;
+  };
+
+  const addMotif = (key: string, motif: MotifId, width: number, step: number, ground: number) => {
+    motifs[key] = motifToRows(motif, width, Math.max(6, step - randInt(2, 5)));
+    bands.push({ kind: "motif", width, ground, motif: key, step, alternate: Math.random() < 0.7 });
+    used += width;
+  };
+
+  // ริมผ้า
+  addWarp(randInt(4, 9));
+
+  // แถบรอง: สุ่มว่าจะมีกี่ชั้นก่อนถึงแถบกลาง
+  const layers = randInt(1, 2);
+  for (let i = 0; i < layers; i += 1) {
+    const width = randInt(10, 18);
+    if (used + width > half - 18) break;
+    addMotif(`side${i}`, i === 0 ? side : accent, width, randInt(18, 30), 0);
+    const stripe = randInt(3, 6);
+    if (used + stripe < half - 16) addWarp(stripe);
   }
 
-  // ลายประกอบริมแถบ
-  if (!filler || margin < 6) return;
-  const size = Math.min(margin - 1, Math.round(motifH / 4));
-  if (size < 5) return;
-  for (const side of [x0 + 2 + Math.round(margin / 2) - Math.round(size / 2), x0 + 2 + inner - Math.round(margin / 2) - Math.round(size / 2)]) {
-    let k = 0;
-    for (let y = -size; y < ROWS; y += Math.round(size * 1.8)) {
-      const small = MOTIFS[filler].build(size, size);
-      if (k % 2 === 1) {
-        for (let i = 0; i < small.cells.length; i += 1) {
-          const v = small.cells[i];
-          if (v === 1) small.cells[i] = 3;
-        }
-      }
-      stampGrid(field, small, side, y);
-      k += 1;
-    }
+  // แถบคั่นลายเล็ก
+  const bandW = randInt(5, 9);
+  if (used + bandW < half - 14) {
+    addMotif("band", bandMotif, bandW, randInt(8, 13), 0);
   }
+
+  // แถบกลาง กินความกว้างที่เหลือทั้งหมด
+  const centreW = Math.max(12, half - used);
+  addMotif("centre", main, centreW, randInt(30, 46), 4);
+
+  const design: ChartDesign = {
+    title: `ลาย${MOTIFS[main].name}ผสม${MOTIFS[side].name}`,
+    size,
+    bands,
+    motifs,
+  };
+
+  // เชิงผ้ามีบ้างไม่มีบ้าง
+  if (Math.random() < 0.6) {
+    const height = randInt(10, Math.round(size / 6));
+    motifs.border = motifToRows(pick([bandMotif, accent, "khit" as MotifId]), randInt(5, 9), height);
+    design.border = { height, motif: "border", ground: 4 };
+  }
+
+  return normaliseDesign(design) ?? design;
 }
+
+/** ลายที่ Gemini วาดมา — ถูกตรวจขนาดมาแล้วฝั่ง API */
+export type Drawing = { title: string; motifs: Record<string, string[]> };
 
 /**
- * รอยฟุ้งของการมัดย้อม: ขอบลายด้านบน-ล่างแตกเป็นเส้นยืนสั้น ๆ
- * เป็นลักษณะเฉพาะที่ทำให้ดูเป็นผ้ามัดหมี่ ไม่ใช่ภาพกราฟิกคมกริบ
+ * จัดวางลายที่ Gemini วาดมาลงบนโครงผ้า
+ * โครงยังสุ่มทุกครั้ง ส่วนตัวลายมาจากโมเดล ผลจึงไม่ซ้ำทั้งลายและโครง
  */
-function feather(field: Grid, amount: number) {
-  const source = new Uint8Array(field.cells);
-  const at = (x: number, y: number) =>
-    x >= 0 && y >= 0 && x < field.w && y < field.h ? source[y * field.w + x] : 0;
+export function buildDesignFromDrawing(selected: Pattern[], drawing: Drawing): ChartDesign {
+  const base = buildLocalDesign(selected);
+  const size = base.size;
+  const half = size / 2;
 
-  for (let x = 0; x < field.w; x += 1) {
-    for (let y = 0; y < field.h; y += 1) {
-      const v = at(x, y);
-      if (GROUND_VALUES.has(v)) continue;
-      for (const dy of [-1, 1]) {
-        const neighbour = at(x, y + dy);
-        if (GROUND_VALUES.has(neighbour) && Math.random() < amount) {
-          gset(field, x, y + dy, v);
-          if (Math.random() < amount * 0.4) gset(field, x, y + dy * 2, v);
-        }
-      }
-    }
+  const motifs: Record<string, string[]> = {};
+  const bands: Band[] = [];
+  let used = 0;
+
+  const fit = (rows: string[], width: number) =>
+    rows.map((row) =>
+      row.length >= width ? row.slice(0, width) : row + ".".repeat(width - row.length)
+    );
+
+  const addWarp = (width: number) => {
+    const sequences = [
+      [1, 5, 0, 0],
+      [1, 0, 5, 0, 1, 0, 0],
+      [5, 1, 0, 2, 0],
+      [1, 0, 0, 2, 0, 0],
+    ];
+    bands.push({ kind: "warp", width, sequence: pick(sequences) });
+    used += width;
+  };
+
+  addWarp(randInt(4, 9));
+
+  const sideRows = drawing.motifs.side;
+  if (sideRows) {
+    const width = Math.min(sideRows[0].length, randInt(12, 18));
+    motifs.side = fit(sideRows, width);
+    bands.push({
+      kind: "motif",
+      width,
+      ground: 0,
+      motif: "side",
+      step: sideRows.length + randInt(4, 10),
+      alternate: Math.random() < 0.7,
+    });
+    used += width;
+    addWarp(randInt(3, 6));
   }
-}
 
-/** วาดตารางลงเป็นผืนผ้า พร้อมเนื้อเส้นไหม */
-function render(field: Grid, palette: string[]) {
-  const canvas = document.createElement("canvas");
-  canvas.width = COLS * CELL;
-  canvas.height = ROWS * CELL;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("canvas not supported");
-
-  for (let y = 0; y < field.h; y += 1) {
-    for (let x = 0; x < field.w; x += 1) {
-      ctx.fillStyle = palette[gget(field, x, y)] ?? palette[0];
-      ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
-    }
+  const bandRows = drawing.motifs.band;
+  if (bandRows && used < half - 16) {
+    const width = Math.min(bandRows[0].length, randInt(6, 9));
+    motifs.band = fit(bandRows, width);
+    bands.push({
+      kind: "motif",
+      width,
+      ground: 0,
+      motif: "band",
+      step: bandRows.length + randInt(2, 5),
+      alternate: true,
+    });
+    used += width;
   }
 
-  ctx.globalCompositeOperation = "multiply";
-  ctx.globalAlpha = 0.22;
-  ctx.fillStyle = "#17100a";
-  for (let x = 0; x < canvas.width; x += CELL) ctx.fillRect(x, 0, 1, canvas.height);
-  ctx.globalAlpha = 0.12;
-  for (let y = 0; y < canvas.height; y += CELL) ctx.fillRect(0, y, canvas.width, 1);
+  const centreW = Math.max(14, half - used);
+  motifs.centre = fit(drawing.motifs.centre, centreW);
+  bands.push({
+    kind: "motif",
+    width: centreW,
+    ground: 4,
+    motif: "centre",
+    step: drawing.motifs.centre.length + randInt(6, 14),
+    alternate: Math.random() < 0.5,
+  });
 
-  ctx.globalCompositeOperation = "source-over";
-  ctx.globalAlpha = 1;
-  return canvas;
+  const design: ChartDesign = {
+    title: drawing.title || base.title,
+    size,
+    bands,
+    motifs,
+  };
+
+  if (motifs.band && Math.random() < 0.6) {
+    const height = motifs.band.length + randInt(2, 6);
+    design.border = { height, motif: "band", ground: 4 };
+  }
+
+  return normaliseDesign(design) ?? base;
 }
 
 export type ComposeResult = { dataUrl: string; recipe: string };
 
-export type ComposeOptions = {
-  centerWidth?: number;
-  sideWidth?: number;
-  stripeWidth?: number;
-  motifHeight?: number;
-  feather?: number;
-  border?: boolean;
-};
+/** เรนเดอร์ผัง (จาก Gemini หรือจากเครื่อง) เป็นภาพผ้า */
+export function renderDesign(design: ChartDesign, palette: string[]): string {
+  const grid = designToGrid(design);
+  return renderChart(grid, design.size, palette).toDataURL("image/png");
+}
 
-export function composeMudmee(selected: Pattern[], options: ComposeOptions = {}): ComposeResult {
-  const specs = selected.map((pattern) => patternMotifs[pattern.id]).filter(Boolean);
+export function composeMudmee(selected: Pattern[], drawing?: Drawing): ComposeResult {
   const palette = buildPalette(selected);
+  const design = drawing?.motifs?.centre
+    ? buildDesignFromDrawing(selected, drawing)
+    : buildLocalDesign(selected);
 
-  const main: MotifId = specs[0]?.main ?? "kaew";
-  const others = Array.from(
-    new Set([...specs.slice(1).map((spec) => spec.main), ...specs.map((spec) => spec.filler)])
-  ).filter((motif) => motif !== main);
-
-  const side: MotifId = others[0] ?? specs[0]?.filler ?? "kho";
-  const outer: MotifId = others[1] ?? side;
-  const stripeMotif: MotifId = specs[0]?.band ?? "khit";
-
-  const field = createGrid(COLS, ROWS);
-
-  // แบ่งความกว้างเป็นริ้วตั้ง สมมาตรรอบแกนกลาง
-  const centerW = options.centerWidth ?? randInt(74, 92);
-  const stripeW = options.stripeWidth ?? randInt(8, 12);
-  const sideW = options.sideWidth ?? randInt(38, 48);
-  const centerX0 = Math.round((COLS - centerW) / 2);
-  const outerW = Math.max(12, centerX0 - stripeW * 2 - sideW);
-
-  for (let y = 0; y < ROWS; y += 1)
-    for (let x = centerX0; x < centerX0 + centerW; x += 1) gset(field, x, y, 4);
-
-  const motifH = options.motifHeight ?? randInt(70, 88);
-
-  drawPanel(field, centerX0, centerW, main, motifH, true, outer);
-
-  for (const dir of [-1, 1]) {
-    const sideX0 = dir === -1 ? centerX0 - stripeW - sideW : centerX0 + centerW + stripeW;
-    const stripeIn = dir === -1 ? centerX0 - stripeW : centerX0 + centerW;
-    const stripeOut = dir === -1 ? sideX0 - stripeW : sideX0 + sideW;
-    const outerX0 = dir === -1 ? stripeOut - outerW : stripeOut + stripeW;
-
-    drawStripe(field, stripeIn, stripeW, stripeMotif);
-    drawPanel(field, sideX0, sideW, side, Math.round(motifH * 0.64), true);
-    drawStripe(field, stripeOut, stripeW, stripeMotif);
-    drawWarpStripes(field, outerX0, outerW);
-  }
-
-  // เชิงผ้าด้านล่าง
-  if (options.border ?? true) {
-    const borderH = randInt(26, 34);
-    const top = ROWS - borderH;
-    for (let y = top; y < ROWS; y += 1) for (let x = 0; x < COLS; x += 1) gset(field, x, y, 4);
-    stampGrid(field, buildBorder(COLS, borderH), 0, top);
-  }
-
-  feather(field, options.feather ?? rand(0.16, 0.28));
-
-  const names = Array.from(new Set([main, side, outer])).map((motif) => MOTIFS[motif].name);
-
+  const motifBands = design.bands.filter((band) => band.kind === "motif");
   return {
-    dataUrl: render(field, palette).toDataURL("image/jpeg", 0.93),
-    recipe: `แถบกลางลาย${names[0]}จาก${selected[0].name}${
-      names.length > 1 ? ` · แถบข้าง${names.slice(1).join(" · ")}` : ""
-    } · ริ้วคั่น${MOTIFS[stripeMotif].name}`,
+    dataUrl: renderDesign(design, palette),
+    recipe: `${design.title} · ผังทอ ${design.size}×${design.size} ช่อง · ${motifBands.length} แถบลาย${
+      design.border ? " · มีเชิงผ้า" : ""
+    }`,
   };
 }
