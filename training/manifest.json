@@ -1,0 +1,173 @@
+{
+  "_note": [
+    "รายการภาพต้นฉบับสำหรับเทรน LoRA",
+    "use=false คือภาพที่ไม่เหมาะเป็นข้อมูลเทรน เช่น มีพร็อพติดมา หรือเป็นผ้าพื้นไม่มีลาย",
+    "family ใช้จัดสมดุลข้อมูล ไม่ใช่ชื่อจังหวัด เพราะ LoRA เรียนจากหน้าตาลาย ไม่ได้เรียนจากชื่อ",
+    "motif / composition / colors คือส่วนที่ 'แปรผัน' ระหว่างภาพ จึงต้องเขียนลง caption",
+    "ส่วนที่เหมือนกันทุกใบ (ผ้าไหม ทอมือ สมมาตร) ไม่เขียน ปล่อยให้ trigger token แบกไว้"
+  ],
+  "images": [
+    {
+      "id": "nong-khai",
+      "use": true,
+      "family": "naga",
+      "motif": "naga motif with flame crest",
+      "composition": "vertical axis repeat",
+      "colors": "burnt orange ground, cream and pale grey figures"
+    },
+    {
+      "id": "kalasin",
+      "use": true,
+      "family": "naga",
+      "motif": "many-armed naga motif",
+      "composition": "nested lozenge frames",
+      "colors": "dark plum ground, cream and gold figures"
+    },
+    {
+      "id": "bueng-kan",
+      "use": true,
+      "family": "phum",
+      "motif": "tiered offering motif with finial",
+      "composition": "single row along the lower edge",
+      "colors": "bright violet ground, white figures"
+    },
+    {
+      "id": "amnat-charoen",
+      "use": true,
+      "family": "kho",
+      "motif": "hook and interlock motif",
+      "composition": "dense all-over lattice",
+      "colors": "deep indigo ground, lighter blue figures"
+    },
+    {
+      "id": "chaiyaphum",
+      "use": true,
+      "family": "kho",
+      "motif": "S-hook motif between warp bands",
+      "composition": "vertical stripe bands",
+      "colors": "dark maroon ground, cream and rust figures"
+    },
+    {
+      "id": "sakon-nakhon",
+      "use": true,
+      "family": "lozenge",
+      "motif": "concentric lozenge lattice with floral centre",
+      "composition": "half-drop all-over repeat",
+      "colors": "indigo ground, three tones of blue and white"
+    },
+    {
+      "id": "si-sa-ket",
+      "use": true,
+      "family": "lozenge",
+      "motif": "small raised lozenge motif",
+      "composition": "fine all-over repeat",
+      "colors": "golden ochre monochrome"
+    },
+    {
+      "id": "nakhon-phanom",
+      "use": true,
+      "family": "lozenge",
+      "motif": "cross and lozenge motif",
+      "composition": "vertical stripe bands",
+      "colors": "dark purple ground, white and red figures"
+    },
+    {
+      "id": "yasothon",
+      "use": true,
+      "family": "lozenge",
+      "motif": "interlaced rattan lattice",
+      "composition": "dense all-over field with banded border",
+      "colors": "bright cyan ground, white figures"
+    },
+    {
+      "id": "mukdahan",
+      "use": true,
+      "family": "lozenge",
+      "motif": "faceted gem motif with small naga",
+      "composition": "horizontal banded repeat",
+      "colors": "strong blue ground, gold and pink accents"
+    },
+    {
+      "id": "loei",
+      "use": true,
+      "family": "floral",
+      "motif": "cotton flower motif",
+      "composition": "vertical stripe bands",
+      "colors": "indigo ground, white figures"
+    },
+    {
+      "id": "maha-sarakham",
+      "use": true,
+      "family": "floral",
+      "motif": "hanging flower chain motif",
+      "composition": "horizontal banded repeat",
+      "colors": "dark brown ground, green yellow and red accents"
+    },
+    {
+      "id": "nong-bua-lamphu",
+      "use": true,
+      "family": "floral",
+      "motif": "lotus motif with raised supplementary weft",
+      "composition": "vertical stripe bands",
+      "colors": "magenta pink ground, white figures"
+    },
+    {
+      "id": "ubon-ratchathani",
+      "use": true,
+      "family": "floral",
+      "motif": "lotus sheath motif",
+      "composition": "vertical stripe bands",
+      "colors": "orchid purple ground, white and pale pink figures"
+    },
+    {
+      "id": "udon-thani",
+      "use": true,
+      "family": "spiral",
+      "motif": "spiral and scroll motif",
+      "composition": "horizontal banded repeat",
+      "colors": "burnt orange ground, cream figures"
+    },
+    {
+      "id": "surin",
+      "use": true,
+      "family": "stripe",
+      "motif": "weft-tied chevron motif",
+      "composition": "vertical ikat columns",
+      "colors": "dusty rose and grey green"
+    },
+    {
+      "id": "buri-ram",
+      "use": true,
+      "family": "stripe",
+      "motif": "twisted two-tone yarn texture",
+      "composition": "fine horizontal striation",
+      "colors": "mauve and smoke grey iridescent"
+    },
+    {
+      "id": "roi-et",
+      "use": true,
+      "family": "stripe",
+      "motif": "banded supplementary weft motif",
+      "composition": "horizontal banded repeat",
+      "colors": "hot pink ground, gold and white accents"
+    },
+    {
+      "id": "khon-kaen",
+      "use": false,
+      "_why": "ภาพถ่ายมีดอกไม้และกระสวยทอวางทับผ้า โมเดลจะเรียนพร็อพไปด้วย",
+      "family": "floral",
+      "motif": "golden shower flower motif",
+      "composition": "dense all-over repeat",
+      "colors": "near black ground, red and gold figures"
+    },
+    {
+      "id": "nakhon-ratchasima",
+      "use": false,
+      "_why": "เป็นผ้าพื้นเรียบโชว์ความเหลือบของเส้นไหม ไม่มีลายให้เรียน",
+      "family": "stripe",
+      "motif": "squirrel tail yarn texture",
+      "composition": "plain weave sheen",
+      "colors": "bright orange monochrome"
+    }
+  ]
+}

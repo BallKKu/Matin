@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# training — ข้อมูลที่สร้างใหม่ได้จากสคริปต์ ไม่ต้องเก็บใน git
+/training/dataset/
+/training/_*
+/training/results.sqlite
+/training/calibration.npz

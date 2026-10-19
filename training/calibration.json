@@ -1,0 +1,14 @@
+{
+  "dataset": "C:\\Users\\ASUS\\Documents\\LernP3T1\\RM\\Minta\\Mudmee-pattern3d-main\\training\\dataset\\v1",
+  "tiles": 148,
+  "symmetry_min": 0.7982,
+  "periodicity_min": 58.78,
+  "symmetry_ref": 0.8932,
+  "periodicity_ref": 100.51,
+  "memorization_threshold": 0.9075,
+  "intra_similarity_median": 0.6062,
+  "embedder": "facebook/dinov2-base",
+  "style_tau": 0.230253,
+  "color_tau": 0.082784,
+  "arrays": "calibration.npz"
+}
