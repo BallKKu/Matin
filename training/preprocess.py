@@ -35,6 +35,7 @@ from scipy.fftpack import dct
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE_DIR = ROOT / "public" / "silk"
 MANIFEST = Path(__file__).resolve().parent / "manifest.json"
+REJECT = Path(__file__).resolve().parent / "reject.json"
 
 TRIGGER = "isaanmudmee"
 
@@ -260,6 +261,19 @@ def run(args: argparse.Namespace) -> None:
     if dropped:
         print(f"ตัดส่วนเกินของตระกูลที่มีเยอะออก {dropped} (เพดาน {args.max_per_family}/ตระกูล)")
 
+    # --- ตัด tile ที่คนคัดทิ้งจากหน้า browse.html ---
+    # อ้างด้วย perceptual hash ไม่ใช่ชื่อไฟล์ เพราะชื่อไฟล์เป็นเลขลำดับ
+    # พอรันใหม่ลำดับจะเลื่อน รายการที่ทิ้งไว้จะชี้ผิดใบ
+    if REJECT.exists():
+        rejected = json.loads(REJECT.read_text(encoding="utf-8")).get("reject", [])
+        hashes = [int(r["hash"]) for r in rejected if isinstance(r, dict) and "hash" in r]
+        if hashes:
+            before_reject = len(balanced)
+            balanced = [
+                t for t in balanced if all(hamming(t.hash, h) > args.hash_distance for h in hashes)
+            ]
+            print(f"ตัด tile ที่คนคัดทิ้งออก {before_reject - len(balanced)} (จาก {REJECT.name})")
+
     # --- เขียนไฟล์ ---
     records = []
     for index, tile in enumerate(sorted(balanced, key=lambda t: (t.family, t.source))):
@@ -275,6 +289,7 @@ def run(args: argparse.Namespace) -> None:
                 "caption": tile.caption,
                 "sharpness": round(tile.sharp, 2),
                 "edge_density": round(tile.edges, 4),
+                "hash": str(tile.hash),
             }
         )
 

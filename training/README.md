@@ -3,9 +3,10 @@
 สคริปต์เตรียมข้อมูลและประเมินผลสำหรับเทรน LoRA ให้โมเดลเรียนรู้เอกลักษณ์ลายผ้า
 
 ```
-preprocess.py   ภาพผ้า → tile + caption → dataset ที่เทรนได้
-evaluate.py     ภาพที่ generate → คะแนน → เลือก checkpoint
-manifest.json   ระบุว่าใช้ภาพไหน ตระกูลลายอะไร และ caption ว่าอย่างไร
+preprocess.py      ภาพผ้า → tile + caption → dataset ที่เทรนได้
+contact_sheet.py   dataset → หน้าเว็บเปิดดูและคัด tile ทิ้งด้วยมือ
+evaluate.py        ภาพที่ generate → คะแนน → เลือก checkpoint
+manifest.json      ระบุว่าใช้ภาพไหน ตระกูลลายอะไร และ caption ว่าอย่างไร
 ```
 
 ---
@@ -61,7 +62,25 @@ python training/preprocess.py --tile-size 384 --scales 1.0,0.8,0.65 --overlap 0.
 
 ผลลัพธ์อยู่ที่ `training/dataset/v1/` — ไฟล์ `.png` คู่กับ `.txt` ตามรูปแบบที่ kohya_ss อ่านได้
 
-### 2. หาเกณฑ์จากข้อมูลจริง
+### 2. เปิดดูและคัด tile ด้วยตา
+
+```bash
+python training/contact_sheet.py
+```
+
+ได้ `training/dataset/v1/browse.html` เป็นไฟล์เดียวจบ ฝังภาพไว้ข้างในแล้ว เปิดที่ไหนก็ได้
+
+สคริปต์คัดอัตโนมัติจับได้แค่ภาพเบลอ พื้นเรียบ และภาพซ้ำ
+แต่จับไม่ได้ว่า tile ไหนตัดกลางลายจนเสียทรง หรือติดขอบผ้าเข้ามา
+ซึ่งเป็นสิ่งที่ทำให้โมเดลเรียนผิด จึงต้องเอาตาดูก่อนเทรนเสมอ
+
+วิธีใช้: กดที่ tile ที่อยากทิ้ง → กด "ส่งออกรายชื่อที่ทิ้ง" → บันทึกเป็น
+`training/reject.json` → รัน `preprocess.py` ใหม่ ระบบจะตัด tile เหล่านั้นออกให้
+
+รายการที่ทิ้งอ้างด้วย **perceptual hash ไม่ใช่ชื่อไฟล์** เพราะชื่อไฟล์เป็นเลขลำดับ
+พอรัน preprocess ใหม่ลำดับจะเลื่อน ถ้าอ้างด้วยชื่อจะไปชี้ผิดใบ
+
+### 3. หาเกณฑ์จากข้อมูลจริง
 
 ```bash
 python training/evaluate.py calibrate
@@ -80,7 +99,7 @@ python training/evaluate.py calibrate
 แนวคิดของเกณฑ์ memorization: ถ้าภาพที่ generate เหมือนภาพ train
 **มากกว่าที่ภาพ train สองใบเหมือนกันเอง** แปลว่าลอกมา ไม่ได้สร้างใหม่
 
-### 3. ให้คะแนน checkpoint
+### 4. ให้คะแนน checkpoint
 
 ```bash
 python training/evaluate.py score \
@@ -88,7 +107,7 @@ python training/evaluate.py score \
   --experiment exp_a --checkpoint epoch_08 --step 400
 ```
 
-### 4. เลือก checkpoint
+### 5. เลือก checkpoint
 
 ```bash
 python training/evaluate.py report
