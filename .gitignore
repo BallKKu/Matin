@@ -45,3 +45,5 @@ next-env.d.ts
 /training/_*
 /training/results.sqlite
 /training/calibration.npz
+/training/source/
+/training/*_bundle.zip

@@ -33,7 +33,10 @@ import numpy as np
 from scipy.fftpack import dct
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE_DIR = ROOT / "public" / "silk"
+# ใช้ภาพที่สกัดจาก PDF ที่ความละเอียดจริงก่อน
+# ถ้ายังไม่ได้รัน extract_sources.py ค่อยถอยไปใช้ไฟล์เว็บซึ่งถูกอัปสเกลและบีบ JPEG มาแล้ว
+NATIVE_DIR = Path(__file__).resolve().parent / "source"
+WEB_DIR = ROOT / "public" / "silk"
 MANIFEST = Path(__file__).resolve().parent / "manifest.json"
 REJECT = Path(__file__).resolve().parent / "reject.json"
 
@@ -150,6 +153,12 @@ def build_caption(entry: dict, scale: float) -> str:
 # --------------------------------------------------------------------------
 
 def run(args: argparse.Namespace) -> None:
+    if NATIVE_DIR.exists():
+        print(f"ใช้ภาพความละเอียดจริงจาก {NATIVE_DIR.name}/")
+    else:
+        print("! ยังไม่มีโฟลเดอร์ source/ จะใช้ไฟล์เว็บซึ่งถูกอัปสเกลมาแล้ว")
+        print("  รัน extract_sources.py ก่อนเพื่อคุณภาพที่ดีกว่า")
+
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     entries = {e["id"]: e for e in manifest["images"] if e.get("use", True)}
     skipped_ids = [e["id"] for e in manifest["images"] if not e.get("use", True)]
@@ -164,9 +173,11 @@ def run(args: argparse.Namespace) -> None:
     candidates: list[Tile] = []
 
     for pattern_id, entry in entries.items():
-        path = SOURCE_DIR / f"{pattern_id}.jpg"
+        path = NATIVE_DIR / f"{pattern_id}.png"
         if not path.exists():
-            print(f"  ! ไม่พบไฟล์ {path.name}")
+            path = WEB_DIR / f"{pattern_id}.jpg"
+        if not path.exists():
+            print(f"  ! ไม่พบไฟล์ของ {pattern_id}")
             continue
 
         image = cv2.imread(str(path), cv2.IMREAD_COLOR)
@@ -185,6 +196,9 @@ def run(args: argparse.Namespace) -> None:
             continue
 
         for crop, scale in crops:
+            # กันกรณี crop ว่างหรือเล็กผิดปกติ ซึ่งทำให้ cv2.resize ล้ม
+            if crop.size == 0 or crop.shape[0] < 8 or crop.shape[1] < 8:
+                continue
             tile = cv2.resize(crop, (args.tile_size, args.tile_size), interpolation=cv2.INTER_LANCZOS4)
             gray = cv2.cvtColor(tile, cv2.COLOR_BGR2GRAY)
             candidates.append(
@@ -292,6 +306,18 @@ def run(args: argparse.Namespace) -> None:
                 "hash": str(tile.hash),
             }
         )
+
+    # metadata.jsonl — รูปแบบ imagefolder ของ Hugging Face
+    # สคริปต์เทรนของ diffusers อ่านไฟล์นี้เพื่อจับคู่ภาพกับ caption
+    with (img_dir / "metadata.jsonl").open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(
+                json.dumps(
+                    {"file_name": record["file"], "text": record["caption"]},
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
 
     counts = Counter(r["family"] for r in records)
     summary = {

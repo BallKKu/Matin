@@ -3,36 +3,55 @@
 สคริปต์เตรียมข้อมูลและประเมินผลสำหรับเทรน LoRA ให้โมเดลเรียนรู้เอกลักษณ์ลายผ้า
 
 ```
-preprocess.py      ภาพผ้า → tile + caption → dataset ที่เทรนได้
-contact_sheet.py   dataset → หน้าเว็บเปิดดูและคัด tile ทิ้งด้วยมือ
-evaluate.py        ภาพที่ generate → คะแนน → เลือก checkpoint
-manifest.json      ระบุว่าใช้ภาพไหน ตระกูลลายอะไร และ caption ว่าอย่างไร
+extract_sources.py  PDF → ภาพผ้าความละเอียดจริง (PNG ไม่สูญเสีย)
+preprocess.py       ภาพผ้า → tile + caption → dataset ที่เทรนได้
+contact_sheet.py    dataset → หน้าเว็บเปิดดูและคัด tile ทิ้งด้วยมือ
+make_bundle.py      dataset → zip สำหรับอัปโหลดขึ้น Colab
+colab_train.ipynb   เทรน LoRA บน Colab + เจนภาพทดสอบทุก checkpoint
+evaluate.py         ภาพที่ generate → คะแนน → เลือก checkpoint
+manifest.json       ระบุว่าใช้ภาพไหน ตระกูลลายอะไร และ caption ว่าอย่างไร
+```
+
+## ลำดับการทำงาน
+
+```bash
+python training/extract_sources.py --pdf "ลายผ้า.pdf"   # ครั้งเดียว
+python training/preprocess.py --tile-size 288 --scales 1.0,0.8,0.65 --overlap 0.4
+python training/contact_sheet.py        # เปิด browse.html คัด tile ที่ไม่เอา
+python training/evaluate.py calibrate   # หาเกณฑ์จากข้อมูล
+python training/make_bundle.py          # ได้ v2_bundle.zip
+# → อัปโหลด zip ขึ้น colab_train.ipynb แล้วเทรน
+python training/evaluate.py score --generated samples/checkpoint-144 ...
+python training/evaluate.py report
 ```
 
 ---
 
 ## ผลที่ได้จากข้อมูลชุดปัจจุบัน
 
-ภาพต้นฉบับ 20 ใบใน `public/silk/` ถูกสกัดจาก PDF จึงผ่าน JPEG มาสองชั้น
-และด้านสั้นที่สุดอยู่ที่ 381–507px เท่านั้น
+ภาพใน `public/silk/` ถูกปรับเป็นกว้าง 900px แล้วบีบ JPEG สำหรับใช้บนเว็บ
+แต่ภาพจริงใน PDF กว้างแค่ **422-745px** หลายใบจึงถูกอัปสเกลขึ้นมาก่อนแล้วโดนบีบซ้ำ
+`extract_sources.py` จึงดึงใหม่ที่ขนาดจริงเป็น PNG เพื่อให้ pipeline เริ่มจากภาพที่คมที่สุด
 
-ตารางนี้วัดจากข้อมูลจริง โดยไม่ยอมให้อัปสเกลเกิน 1.15 เท่า
-เพราะการขยายภาพเล็กขึ้นไปเป็น tile ใหญ่จะสอนให้โมเดลสร้างภาพเบลอ
+ขนาดจัตุรัสที่ตัดได้จากภาพจริง: เล็กสุด 230px · **กลาง 368px** · ใหญ่สุด 602px
 
-| ขนาด tile | จำนวน tile | ภาพที่ยังมีข้อมูลเหลือ |
+จำนวน tile ที่ได้ โดยไม่ยอมให้อัปสเกลเกิน 1.15 เท่า
+(การขยายภาพเล็กขึ้นไปเป็น tile ใหญ่สอนให้โมเดลสร้างภาพเบลอ)
+
+| ขนาด tile | จำนวน tile | ภาพที่ยังมีข้อมูล |
 |---|---|---|
-| 320px | 207 | 17/18 |
-| **384px** | **148** | **17/18** |
-| 448px | 144 | 16/18 |
-| 512px | 68 | 16/18 |
-| 640px | 23 | 7/18 |
-| 768px | 8 | 4/18 |
+| **288px** | **143** | **16/18** |
+| 320px | 98 | 16/18 |
+| 352px | 76 | 16/18 |
+| 384px | 47 | 11/18 |
 
-**ข้อสรุป:** ข้อมูลชุดนี้รองรับได้สูงสุดราว 384px
-ซึ่งต่ำกว่า native ของ SDXL (1024px) และต่ำกว่า SD 1.5 (512px) ด้วยซ้ำ
+**ข้อสรุป:** ข้อมูลชุดนี้รองรับได้ที่ 288px
+ต่ำกว่า native ของ SD 1.5 (512px) และ SDXL (1024px) มาก
+โน้ตบุ๊ก Colab จึงขยายด้วย Real-ESRGAN เป็น 576px ก่อนเทรน
+ซึ่งรักษาขอบลายได้ดีกว่าการขยายธรรมดา แต่ไม่ได้สร้างรายละเอียดที่ต้นฉบับไม่มี
 
-> การหาภาพผ้าความละเอียดสูงกว่านี้ มีผลต่อคุณภาพมากกว่าการจูน hyperparameter ทุกตัวรวมกัน
-> ถ้าถ่ายผ้าจริงได้ที่ 2000px+ จะปลดล็อกการเทรนที่ 768–1024px ทันที
+> ถ้าถ่ายผ้าจริงที่ 2000px+ ได้ จะปลดล็อกการเทรนที่ 768-1024px ทันที
+> และมีผลต่อคุณภาพมากกว่าการจูน hyperparameter ทุกตัวรวมกัน
 
 ภาพที่ถูกตัดออกและเหตุผล:
 
@@ -40,16 +59,14 @@ manifest.json      ระบุว่าใช้ภาพไหน ตระก
 |---|---|
 | `khon-kaen` | มีดอกไม้และกระสวยทอวางทับผ้า โมเดลจะเรียนพร็อพไปด้วย |
 | `nakhon-ratchasima` | ผ้าพื้นเรียบโชว์ความเหลือบ ไม่มีลายให้เรียน |
-| `si-sa-ket` | ลายนูนจางมาก ทุก tile ตกเกณฑ์ความหนาแน่นของขอบ |
-
----
+| `si-sa-ket` · `roi-et` | จัตุรัสใหญ่สุดแค่ 245 และ 230px เล็กเกินกว่าจะตัด tile ได้ |
 
 ## การใช้งาน
 
 ### 1. เตรียม dataset
 
 ```bash
-python training/preprocess.py --tile-size 384 --scales 1.0,0.8,0.65 --overlap 0.4
+python training/preprocess.py --tile-size 288 --scales 1.0,0.8,0.65 --overlap 0.4
 ```
 
 สคริปต์จะตัด tile จัตุรัสหลายสเกล แล้วคัดออกสามชั้น
@@ -60,7 +77,7 @@ python training/preprocess.py --tile-size 384 --scales 1.0,0.8,0.65 --overlap 0.
 | พื้นเรียบ | edge density จาก Canny ที่ปรับตามความสว่างภาพ | ผ้าโทนเข้มกับโทนสว่างให้ค่าต่างกันมากถ้าใช้เกณฑ์ตายตัว |
 | ภาพซ้ำ | perceptual hash (DCT) hamming ≤ 6 | sliding window ทำให้ได้ tile ที่เกือบเหมือนกัน |
 
-ผลลัพธ์อยู่ที่ `training/dataset/v1/` — ไฟล์ `.png` คู่กับ `.txt` ตามรูปแบบที่ kohya_ss อ่านได้
+ผลลัพธ์อยู่ที่ `training/dataset/v2/` — ไฟล์ `.png` คู่กับ `.txt` ตามรูปแบบที่ kohya_ss อ่านได้
 
 ### 2. เปิดดูและคัด tile ด้วยตา
 
@@ -68,7 +85,7 @@ python training/preprocess.py --tile-size 384 --scales 1.0,0.8,0.65 --overlap 0.
 python training/contact_sheet.py
 ```
 
-ได้ `training/dataset/v1/browse.html` เป็นไฟล์เดียวจบ ฝังภาพไว้ข้างในแล้ว เปิดที่ไหนก็ได้
+ได้ `training/dataset/v2/browse.html` เป็นไฟล์เดียวจบ ฝังภาพไว้ข้างในแล้ว เปิดที่ไหนก็ได้
 
 สคริปต์คัดอัตโนมัติจับได้แค่ภาพเบลอ พื้นเรียบ และภาพซ้ำ
 แต่จับไม่ได้ว่า tile ไหนตัดกลางลายจนเสียทรง หรือติดขอบผ้าเข้ามา
@@ -181,8 +198,8 @@ python training/evaluate.py report
 
 ## สิ่งที่ยังไม่ได้ทำ
 
-สคริปต์เทรนจริงยังไม่มีในโฟลเดอร์นี้ เพราะต้องรันบน GPU
-`dataset/v1` อยู่ในรูปแบบที่ kohya_ss อ่านได้ทันที (`.png` + `.txt` ชื่อเดียวกัน)
+สคริปต์เทรนอยู่ใน `colab_train.ipynb` แล้ว ที่เหลือคือรันจริงบน Colab
+`dataset/v2` ใช้ได้ทั้งกับ kohya_ss (`.png` + `.txt`) และ diffusers (`metadata.jsonl`)
 
 ค่าตั้งต้นที่แนะนำสำหรับ dataset ขนาดนี้:
 
@@ -194,10 +211,10 @@ unet_lr: 1.0e-4
 text_encoder_lr: 5.0e-5
 optimizer: AdamW8bit
 lr_scheduler: cosine_with_restarts
-resolution: 384          # ตามเพดานของข้อมูล ไม่ใช่ตามที่โมเดลอยากได้
+resolution: 768          # หลังขยายด้วย Real-ESRGAN แล้ว
 train_batch_size: 2
 gradient_accumulation_steps: 2
-max_train_epochs: 12     # 148 tiles / 4 = 37 steps ต่อ epoch → ~440 steps
+max_train_epochs: 24     # 143 tiles / 4 = 36 steps ต่อ epoch → ~860 steps
 save_every_n_epochs: 1
 noise_offset: 0.05
 min_snr_gamma: 5
