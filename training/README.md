@@ -8,6 +8,7 @@ preprocess.py       ภาพผ้า → tile + caption → dataset ที่�
 contact_sheet.py    dataset → หน้าเว็บเปิดดูและคัด tile ทิ้งด้วยมือ
 make_bundle.py      dataset → zip สำหรับอัปโหลดขึ้น Colab
 colab_train.ipynb   เทรน LoRA บน Colab + เจนภาพทดสอบทุก checkpoint
+generate.py         LoRA ที่เทรนแล้ว → ภาพลายผ้าใหม่ (ต้องมี GPU)
 evaluate.py         ภาพที่ generate → คะแนน → เลือก checkpoint
 manifest.json       ระบุว่าใช้ภาพไหน ตระกูลลายอะไร และ caption ว่าอย่างไร
 ```
