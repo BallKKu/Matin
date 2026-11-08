@@ -47,3 +47,5 @@ next-env.d.ts
 /training/calibration.npz
 /training/source/
 /training/*_bundle.zip
+/training/_*.png
+/training/_*.txt
