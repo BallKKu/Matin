@@ -34,11 +34,18 @@ def main() -> None:
     summary = json.loads((dataset / "dataset.json").read_text(encoding="utf-8"))
     out_path = Path(args.out) if args.out else HERE / f"{dataset.name}_bundle.zip"
 
+    # ใส่สคริปต์ที่ Colab ต้องใช้ไปด้วย จะได้ไม่ต้องอัปโหลดทีละไฟล์
+    # ส่วนการเพิ่มข้อมูลไปทำบน Colab เพราะชุดที่ขยายแล้วใหญ่เกินกว่าจะอัปโหลด
+    extras = [HERE / "augment.py", HERE / "manifest.json", HERE / "serve.py"]
+
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as bundle:
         for path in sorted(images.iterdir()):
             if path.is_file():
                 bundle.write(path, f"images/{path.name}")
         bundle.write(dataset / "dataset.json", "dataset.json")
+        for path in extras:
+            if path.exists():
+                bundle.write(path, path.name)
 
     size_mb = out_path.stat().st_size / 1024 / 1024
     print(f"เขียน {out_path}")
