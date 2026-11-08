@@ -12,6 +12,8 @@ import { loadAccounts, runWithKeyPool } from "@/lib/geminiKeyPool";
  * ผลที่ได้จึงไม่ซ้ำและไม่ติดกรอบโครงที่เราฟิกไว้
  */
 
+const LORA_TRIGGER = "isaanmudmee";
+
 const TEXT_MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3.8-flash"];
 
 /** โมเดลข้อความฝั่ง free tier ล่มเป็นช่วง ๆ จึงกันเวลารวมไว้ ไม่ให้ผู้ใช้รอนาน */
@@ -190,6 +192,174 @@ async function generateWithStability(selected: typeof patterns, note: string) {
   return { image: `data:image/jpeg;base64,${bytes}`, error: null };
 }
 
+
+/**
+ * แปลงจินตนาการของผู้ใช้เป็นคำสั่งภาพภาษาอังกฤษ ด้วยโมเดลภาษา
+ *
+ * ไม่มีโครงประโยคบังคับและไม่มีคลังคำ ผู้ใช้พิมพ์อะไรก็ได้เป็นภาษาไทย
+ * บังคับอย่างเดียวคือ trigger token ซึ่งเป็นกุญแจเรียกสไตล์ที่เทรนไว้
+ * เหตุที่ต้องแปลง เพราะ SDXL อ่านภาษาไทยแทบไม่ได้
+ * และ caption ที่ใช้เทรนเป็นภาษาอังกฤษทั้งหมด
+ */
+async function composePrompt(
+  selected: typeof patterns,
+  note: string
+): Promise<{ prompt: string; model: string | null }> {
+  const fallback = () => {
+    const names = selected.map((item) => item.meaning.slice(0, 80)).join("; ");
+    return `${LORA_TRIGGER}, ${note.trim() || names}`.slice(0, 900);
+  };
+
+  const accounts = loadAccounts();
+  if (accounts.length === 0) return { prompt: fallback(), model: null };
+
+  // เมื่อผู้ใช้พิมพ์จินตนาการมา ให้ส่งแค่ "ชื่อลาย" ไม่ส่งคำอธิบาย
+  // เพราะคำอธิบายผ้าแต่ละผืนมีภาพพจน์แน่นมาก พอใส่ไปโมเดลจะเกาะมันแทน
+  // แล้วกลบสิ่งที่ผู้ใช้อยากได้จนหมด
+  const hasIdea = note.trim().length > 0;
+  const reference = hasIdea
+    ? selected.map((item) => item.name).join(", ")
+    : selected.map((item) => `- ${item.name}: ${item.meaning.slice(0, 140)}`).join("\n");
+
+  const instruction = `คุณคือช่างออกแบบลายผ้าไหมมัดหมี่อีสานที่เข้าใจการสั่งงานโมเดลสร้างภาพ
+
+${
+    note.trim()
+      ? `สิ่งที่ผู้ใช้จินตนาการไว้ นี่คือโจทย์หลัก ต้องปรากฏในคำสั่งให้ครบทุกส่วน:
+"${note.trim()}"`
+      : "ผู้ใช้ไม่ได้บอกอะไรมา ให้คิดลายขึ้นใหม่เองล้วน ๆ กล้าแปลก"
+  }
+
+${
+    hasIdea
+      ? `ผ้าต้นแบบที่เลือกไว้ (${reference}) ใช้แค่เป็นกลิ่นอายของงานทอ
+ห้ามหยิบลายของมันมาใส่จนกลบสิ่งที่ผู้ใช้จินตนาการ`
+      : `ผ้าต้นแบบที่ผู้ใช้เลือก:
+${reference}`
+  }
+
+แปลงเป็นคำสั่งภาษาอังกฤษสำหรับ Stable Diffusion หนึ่งชุด
+
+กติกา
+- ขึ้นต้นด้วย "${LORA_TRIGGER}," เสมอ
+- **เขียนเป็นภาษาอังกฤษล้วน ห้ามมีอักษรไทยแม้แต่ตัวเดียว** ชื่อเฉพาะภาษาไทย
+  ให้ถอดเป็นคำอังกฤษที่บรรยายรูปร่าง เช่น "ดอกสิรินธรวัลลี" เขียนว่า "climbing vine flower"
+- ที่เหลือเขียนอิสระ ไม่มีโครงประโยคบังคับ ถ้าผู้ใช้ไม่ได้พูดถึงสี ก็ไม่ต้องใส่สี
+- บรรยายสิ่งที่มองเห็นในผืนผ้า ไม่ใช่ความรู้สึกหรือเรื่องเล่า
+- ห้ามใส่คำว่า photo, realistic, 3d render เพราะนี่คือผ้าทอแบน
+${hasIdea ? "- ก่อนตอบ ให้ไล่ทวนว่าทุกสิ่งที่ผู้ใช้พูดถึง ทั้งรูปร่าง สี และการจัดวาง ปรากฏอยู่ในคำสั่งครบแล้ว" : ""}
+
+ตอบเป็น JSON เท่านั้น: {"prompt": "..."}`;
+
+  const payload = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: instruction }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      // เมื่อผู้ใช้บอกจินตนาการมา งานนี้คือ "แปลให้ซื่อสัตย์" ไม่ใช่ "คิดเพิ่ม"
+      // ตั้งอุณหภูมิสูงแล้วโมเดลจะหลงไปคิดลายของมันเองจนทิ้งโจทย์
+      // ความหลากหลายมาจากข้อความของผู้ใช้กับ seed ของภาพอยู่แล้ว
+      // ส่วนกรณีไม่มีโจทย์ ค่อยปล่อยให้มันคิดอิสระ
+      temperature: hasIdea ? 0.35 : 1.3,
+      maxOutputTokens: 1024,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+  });
+
+  const result = await runWithKeyPool(accounts, async (key) => {
+    let lastStatus = 503;
+    let lastBody = "หมดเวลารอ Gemini";
+    let attempted = 0;
+    let quotaHits = 0;
+
+    for (const model of TEXT_MODELS) {
+      attempted += 1;
+      let response: Response;
+      try {
+        response = await fetch(endpoint(model), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: payload,
+          signal: AbortSignal.timeout(15_000),
+        });
+      } catch {
+        lastStatus = 504;
+        lastBody = `${model} ไม่ตอบในเวลาที่กำหนด`;
+        continue;
+      }
+
+      if (!response.ok) {
+        lastStatus = response.status;
+        lastBody = await response.text();
+        if (response.status === 429) quotaHits += 1;
+        continue;
+      }
+
+      const data = await response.json();
+      const text: string =
+        data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+      try {
+        const parsed = JSON.parse(text);
+        if (typeof parsed?.prompt === "string" && parsed.prompt.trim()) {
+          return { ok: true as const, value: { prompt: parsed.prompt.trim(), model } };
+        }
+      } catch {
+        /* โมเดลตอบไม่เป็น JSON — ลองรุ่นถัดไป */
+      }
+      lastStatus = 502;
+      lastBody = "โมเดลตอบไม่เป็น JSON";
+    }
+
+    const quotaExhausted = attempted > 0 && quotaHits === attempted;
+    return { ok: false as const, status: quotaExhausted ? 429 : 503, body: lastBody };
+  });
+
+  if (!result.ok) return { prompt: fallback(), model: null };
+
+  // ตัดอักษรไทยที่หลุดมาทิ้ง SDXL อ่านไม่ออกและทำให้ส่วนที่เหลือเพี้ยน
+  const cleaned = result.value.prompt
+    .replace(/[฀-๿]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+,/g, ",")
+    .replace(/,\s*,/g, ",")
+    .trim();
+
+  const prompt = cleaned.toLowerCase().startsWith(LORA_TRIGGER)
+    ? cleaned
+    : `${LORA_TRIGGER}, ${cleaned}`;
+  return { prompt, model: result.value.model };
+}
+
+/**
+ * เรียก GPU server ที่รัน LoRA อยู่ (ดู training/colab_serve.ipynb)
+ * ตั้ง LORA_API_URL ใน .env.local แล้วทางนี้จะถูกใช้เป็นลำดับแรก
+ */
+async function generateWithLora(prompt: string) {
+  const base = process.env.LORA_API_URL?.trim();
+  if (!base) return { image: null, error: null };
+
+  try {
+    const response = await fetch(`${base.replace(/\/$/, "")}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, count: 1, size: 1024, steps: 28, cfg: 6.0 }),
+      signal: AbortSignal.timeout(180_000),
+    });
+
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 200);
+      console.error("LoRA server error:", response.status, detail);
+      return { image: null, error: `เซิร์ฟเวอร์ LoRA ตอบ ${response.status}` };
+    }
+
+    const data = await response.json();
+    const image = data?.images?.[0];
+    if (typeof image !== "string") return { image: null, error: "เซิร์ฟเวอร์ LoRA ไม่ได้ส่งภาพกลับมา" };
+    return { image, error: null, seconds: data.seconds, seed: data.seeds?.[0], lora: data.lora };
+  } catch {
+    return { image: null, error: "ติดต่อเซิร์ฟเวอร์ LoRA ไม่ได้" };
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -203,6 +373,23 @@ export async function POST(request: Request) {
     const selected = patterns.filter((item) => ids.includes(item.id));
     if (selected.length === 0) {
       return Response.json({ error: "ไม่พบลายผ้าที่เลือก" }, { status: 400 });
+    }
+
+    // LoRA ที่เทรนเองมาก่อน เพราะเป็นลายที่เรียนจากผ้าจริงของเรา
+    if (process.env.LORA_API_URL?.trim()) {
+      const composed = await composePrompt(selected, note);
+      const lora = await generateWithLora(composed.prompt);
+      if (lora.image) {
+        return Response.json({
+          image: lora.image,
+          prompt: composed.prompt,
+          promptModel: composed.model,
+          seed: lora.seed,
+          seconds: lora.seconds,
+          source: "lora",
+        });
+      }
+      console.error("LoRA ใช้ไม่ได้ ถอยไปทางถัดไป:", lora.error);
     }
 
     // ทางที่ให้ภาพสวยที่สุดก่อน ถ้าตั้งคีย์ไว้

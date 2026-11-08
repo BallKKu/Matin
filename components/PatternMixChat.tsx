@@ -96,9 +96,15 @@ export default function PatternMixChat({ selected, onRemove, onClear }: Props) {
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.image) {
-        // ภาพจริงจาก Stability AI
+        const from =
+          data.source === "lora"
+            ? `LoRA ที่เทรนเอง${data.seconds ? ` · ${data.seconds} วินาที` : ""}`
+            : "Stability AI";
         finish({
-          text: `ลายผสมจาก ${attachments.map((item) => item.name).join(" + ")} (Stability AI)`,
+          text: data.prompt
+            ? `${from}
+${data.prompt}`
+            : `ลายผสมจาก ${attachments.map((item) => item.name).join(" + ")} (${from})`,
           image: data.image,
           source: "gemini",
         });
