@@ -14,6 +14,7 @@ colab_serve.ipynb   รัน serve.py บน Colab แล้วต่อ tunnel
 augment.py          หมุนเฉดสี + พลิกภาพ → ข้อมูลเทรนเพิ่ม 14 เท่า
 compose.py          จินตนาการภาษาไทย → prompt ภาษาอังกฤษ (ไม่มีคลังคำตายตัว)
 generate.py         LoRA ที่เทรนแล้ว → ภาพลายผ้าใหม่ (ต้องมี GPU)
+weaverize.py        ภาพจาก AI → ผังทอที่สมมาตรและมีกริดจริง
 evaluate.py         ภาพที่ generate → คะแนน → เลือก checkpoint
 manifest.json       ระบุว่าใช้ภาพไหน ตระกูลลายอะไร และ caption ว่าอย่างไร
 ```
