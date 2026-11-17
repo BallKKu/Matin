@@ -7,6 +7,7 @@ extract_sources.py  PDF → ภาพผ้าความละเอียด�
 preprocess.py       ภาพผ้า → tile + caption → dataset ที่เทรนได้
 contact_sheet.py    dataset → หน้าเว็บเปิดดูและคัด tile ทิ้งด้วยมือ
 make_bundle.py      dataset → zip สำหรับอัปโหลดขึ้น Colab
+colab_preview.ipynb ดูเส้นฐานจาก SDXL เปล่า ก่อนตัดสินใจเทรน (10 นาที)
 colab_train.ipynb   เทรน LoRA บน Colab + เจนภาพทดสอบทุก checkpoint
 serve.py            เปิด LoRA เป็น API ให้เว็บเรียกเจนสด
 colab_serve.ipynb   รัน serve.py บน Colab แล้วต่อ tunnel ออกมา
